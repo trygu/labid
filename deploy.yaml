@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: labid
+  name: labid
+  namespace: onyxia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: labid
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: labid
+    spec:
+      serviceAccountName: labid
+      containers:
+        - image: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/onyxia/aux/labid:dev1
+          name: labid
+          resources: {}
+          env:
+            - name: LABID_PORT
+              value: "8080"
+            - name: LABID_ISSUER_URI
+              value: https://container.googleapis.com/v1/projects/dapla-lab-d-b8/locations/europe-west4-a/clusters/dapla-lab-dev
+status: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: labid
+  name: labid
+  namespace: onyxia
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: labid
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: labid
+  namespace: onyxia
+spec:
+  exportTo:
+    - .
+  hosts:
+    - container.googleapis.com
+  location: MESH_EXTERNAL
+  ports:
+    - name: https
+      number: 443
+      protocol: HTTPS
+  resolution: NONE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: labid
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: labid
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: labid
+subjects:
+  - kind: ServiceAccount
+    name: labid
+    namespace: onyxia
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: labid
+  namespace: onyxia
