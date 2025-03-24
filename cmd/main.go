@@ -11,30 +11,20 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/caarlos0/env/v11"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddle "github.com/go-chi/chi/v5/middleware"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/statisticsnorway/labid/internal/middleware"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-)
-
-const (
-	daplaGroupAnnotation = "dapla.ssb.no/impersonate-group"
-	userNamespacePrefix  = "user-ssb-"
-)
-
-// Used for custom context keys
-type ctxKey int
-
-const (
-	userInfoCtxKey ctxKey = iota
-	tokenCtxKey
 )
 
 type config struct {
@@ -44,11 +34,6 @@ type config struct {
 
 type WellKnown struct {
 	JwksUri string `json:"jwks_uri"`
-}
-
-type UserInfo struct {
-	Name  string
-	Group string
 }
 
 // FetchWellKnown assumes the well-know file is at {issuerUri}/.well-known/openid-configuration
@@ -142,10 +127,14 @@ func main() {
 		panic(err.Error())
 	}
 
+	getServiceAccount := func(ctx context.Context, name, namespace string) (*corev1.ServiceAccount, error) {
+		return clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, v1.GetOptions{})
+	}
+
 	// Create chi webserver
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
+	r.Use(chimiddle.Logger)
 
 	// The token endpoints needs to
 	// 1. Validate that there is a Bearer token, and that it
@@ -153,8 +142,8 @@ func main() {
 	// 2. Figure out the user's context (username, access group)
 	// 3. Create a JWT signed by our signing key, with our custom claims
 	r.Route("/token", func(r chi.Router) {
-		r.Use(JwkSetValidator(getJwks))
-		r.Use(UserContext(clientset))
+		r.Use(middleware.JwkSetValidator(getJwks))
+		r.Use(middleware.UserContext(getServiceAccount))
 		r.Get("/", GetToken(privateKey))
 	})
 
@@ -167,10 +156,10 @@ func main() {
 
 func GetToken(privateKey jwk.Key) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ui, ok := r.Context().Value(userInfoCtxKey).(UserInfo)
+		ui, ok := r.Context().Value(middleware.UserInfoContextKey).(middleware.UserInfo)
 		if !ok {
 			http.Error(w, "incorrect userinfo type", http.StatusInternalServerError)
-			slog.Error("userinfo had type %T", r.Context().Value(userInfoCtxKey))
+			slog.Error("userinfo had type %T", r.Context().Value(middleware.UserInfoContextKey))
 			return
 		}
 
@@ -204,92 +193,4 @@ func GetToken(privateKey jwk.Key) func(http.ResponseWriter, *http.Request) {
 			http.Error(w, "error encoding token response", http.StatusInternalServerError)
 		}
 	}
-}
-
-func UserContext(k8sClient *kubernetes.Clientset) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token, ok := r.Context().Value(tokenCtxKey).(jwt.Token)
-			if !ok {
-				http.Error(w, "failed to retrieve token from context", http.StatusInternalServerError)
-				return
-			}
-
-			var k8sMeta KubernetesIoClaim
-			if err := token.Get("kubernetes.io", &k8sMeta); err != nil {
-				http.Error(w, "incorrect token format", http.StatusInternalServerError)
-				return
-			}
-
-			sa, err := k8sClient.CoreV1().ServiceAccounts(k8sMeta.Namespace).Get(r.Context(), k8sMeta.ServiceAccount.Name, v1.GetOptions{})
-			if err != nil {
-				http.Error(w, "could not find associated service account", http.StatusInternalServerError)
-				return
-			}
-
-			group, ok := sa.Annotations[daplaGroupAnnotation]
-			if !ok {
-				http.Error(w, "service account is not associated with any group", http.StatusInternalServerError)
-				return
-			}
-
-			name := strings.TrimPrefix(k8sMeta.Namespace, userNamespacePrefix)
-
-			ui := UserInfo{
-				Name:  name,
-				Group: group,
-			}
-
-			ctx := context.WithValue(r.Context(), userInfoCtxKey, ui)
-
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-func JwkSetValidator(getJwks func(context.Context) (jwk.Set, error)) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "missing authorization", http.StatusUnauthorized)
-				return
-			}
-			// Case insensitive check for "bearer "
-			if !strings.EqualFold(authHeader[:7], "bearer ") {
-				http.Error(w, "incorrect authorization type, only bearer supported", http.StatusForbidden)
-				return
-			}
-			jwks, err := getJwks(r.Context())
-			if err != nil {
-				http.Error(w, "could not get JWKs", http.StatusInternalServerError)
-				slog.Error("could not get JWKs", "error", err)
-				return
-			}
-			// Strip away "bearer "
-			tokenStr := authHeader[7:]
-			token, err := jwt.Parse(
-				[]byte(tokenStr),
-				jwt.WithKeySet(jwks),
-				jwt.WithValidate(true),
-				// Type safe custom claims!
-				jwt.WithTypedClaim("kubernetes.io", KubernetesIoClaim{}),
-			)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
-				slog.Error("error parsing token", "error", err)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), tokenCtxKey, token)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-type KubernetesIoClaim struct {
-	Namespace      string `json:"namespace"`
-	ServiceAccount struct {
-		Name string `json:"name"`
-	} `json:"serviceaccount"`
 }
