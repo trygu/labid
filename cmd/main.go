@@ -4,68 +4,33 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/go-chi/chi/v5"
 	chimiddle "github.com/go-chi/chi/v5/middleware"
 	"github.com/lestrrat-go/httprc/v3"
-	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/statisticsnorway/labid/internal/handler"
 	"github.com/statisticsnorway/labid/internal/middleware"
+	"github.com/statisticsnorway/labid/internal/token"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
 type config struct {
-	IssuerUri string `env:"ISSUER_URI,required,notEmpty"`
-	Port      string `env:"PORT" envDefault:"8080"`
+	JwksUri string `env:"JWKS_URI,required,notEmpty"`
+	Port    string `env:"PORT" envDefault:"8080"`
 }
 
 type WellKnown struct {
 	JwksUri string `json:"jwks_uri"`
-}
-
-// FetchWellKnown assumes the well-know file is at {issuerUri}/.well-known/openid-configuration
-// Is only used to get the JWKS URI, so will probably just k
-func FetchWellKnown(issuerUri string) (WellKnown, error) {
-	var wellKnown WellKnown
-	wellKnownUri := fmt.Sprintf(
-		"%s/.well-known/openid-configuration",
-		strings.TrimSuffix(issuerUri, "/"),
-	)
-
-	wellKnownRes, err := http.Get(wellKnownUri)
-	if err != nil {
-		return wellKnown, err
-	}
-	if wellKnownRes.StatusCode != http.StatusOK {
-		return wellKnown, fmt.Errorf("well known endpoint (%s) did not return 200 OK, got: %s", wellKnownUri, wellKnownRes.Status)
-	}
-
-	wellKnownDec := json.NewDecoder(wellKnownRes.Body)
-	defer wellKnownRes.Body.Close()
-	err = wellKnownDec.Decode(&wellKnown)
-	return wellKnown, err
-}
-
-func GetJwks(key jwk.Key) http.HandlerFunc {
-	jwks := jwk.NewSet()
-	jwks.AddKey(key)
-	return func(w http.ResponseWriter, r *http.Request) {
-		enc := json.NewEncoder(w)
-		enc.Encode(jwks)
-	}
 }
 
 func main() {
@@ -97,20 +62,15 @@ func main() {
 		panic(err)
 	}
 
-	wellKnown, err := FetchWellKnown(cfg.IssuerUri)
-	if err != nil {
-		panic(err)
-	}
-
 	// Establish a automatically updating cache of the external JWKS
 	jwksCache, err := jwk.NewCache(ctx, httprc.NewClient())
 	if err != nil {
 		panic(err)
 	}
 	getJwks := func(ctx context.Context) (jwk.Set, error) {
-		return jwksCache.Lookup(ctx, wellKnown.JwksUri)
+		return jwksCache.Lookup(ctx, cfg.JwksUri)
 	}
-	if err := jwksCache.Register(ctx, wellKnown.JwksUri); err != nil {
+	if err := jwksCache.Register(ctx, cfg.JwksUri); err != nil {
 		panic(err)
 	}
 
@@ -128,7 +88,12 @@ func main() {
 	}
 
 	getServiceAccount := func(ctx context.Context, name, namespace string) (*corev1.ServiceAccount, error) {
-		return clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, v1.GetOptions{})
+		return clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+
+	signedJwtCreator, err := token.NewSignedJwtCreator(privateKey)
+	if err != nil {
+		panic(err.Error())
 	}
 
 	// Create chi webserver
@@ -144,53 +109,11 @@ func main() {
 	r.Route("/token", func(r chi.Router) {
 		r.Use(middleware.JwkSetValidator(getJwks))
 		r.Use(middleware.UserContext(getServiceAccount))
-		r.Get("/", GetToken(privateKey))
+		r.Get("/", handler.GetToken(signedJwtCreator))
 	})
 
-	r.Get("/jwks", GetJwks(publicKey))
+	r.Get("/jwks", handler.GetJwks(publicKey))
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
-		panic(err)
-	}
-}
-
-func GetToken(privateKey jwk.Key) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ui, ok := r.Context().Value(middleware.UserInfoContextKey).(middleware.UserInfo)
-		if !ok {
-			http.Error(w, "incorrect userinfo type", http.StatusInternalServerError)
-			slog.Error("userinfo had type %T", r.Context().Value(middleware.UserInfoContextKey))
-			return
-		}
-
-		jwtBuilder := jwt.NewBuilder()
-		jwtBuilder.Subject(ui.Name)
-		jwtBuilder.Claim("group", ui.Group)
-		// Expiration time will be configurable via env vars
-		jwtBuilder.Expiration(time.Now().Add(time.Hour))
-		jwtBuilder.IssuedAt(time.Now())
-		// Issuer will probably not be "labid" ...
-		jwtBuilder.Issuer("labid")
-		token, err := jwtBuilder.Build()
-		if err != nil {
-			http.Error(w, "error building jwt", http.StatusInternalServerError)
-			slog.Error("build jwt", "error", err)
-			return
-		}
-
-		signedToken, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), privateKey))
-		if err != nil {
-			http.Error(w, "couldn't sign JWT", http.StatusInternalServerError)
-			slog.Error("couldn't sign JWT", "error", err)
-			return
-		}
-
-		resp := map[string]string{
-			"token": string(signedToken),
-		}
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(resp); err != nil {
-			http.Error(w, "error encoding token response", http.StatusInternalServerError)
-		}
-	}
+	err = http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r)
+	slog.Info(err.Error())
 }
