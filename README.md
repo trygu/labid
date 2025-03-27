@@ -15,5 +15,5 @@ sequenceDiagram
     labid-->>GKE: Deduces Dapla group based on Client's SA annotations
     labid->>Client: Response with JWT token
     Client->>Service: Request with token from labid
-    Service->>labid: Check validity of labid token against JWKS (/jwks)
+    Service-->>labid: Checks validity of labid token against JWKS (/jwks)
 ```
