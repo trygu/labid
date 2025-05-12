@@ -1,0 +1,83 @@
+openapi: 3.1.1
+info:
+  title: LabID token exchange service
+  version: 0.0.1
+components:
+  TokenExchangeRequest:
+    type: object
+    required:
+      - grant_type
+      - subject_token
+      - subject_token_type
+    additionalProperties: false
+    properties:
+      grant_type:
+        type: string
+        enum:
+          - urn:ietf:params:oauth:grant-type:token-exchange
+      audience:
+        type: array
+        items:
+          type: string
+      scope:
+        type: string
+      subject_token:
+        type: string
+      subject_token_type:
+        type: string
+        enum:
+          - urn:ietf:params:oauth:grant-type:id_token
+paths:
+  /token:
+    post:
+      operationId: "exchangeToken"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/TokenExchangeRequest"
+      responses:
+        "200":
+          description: "LabID token"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access_token
+                  - issued_token_type
+                  - token_type
+                  - expires_in
+                properties:
+                  access_token:
+                    type: string
+                  issued_token_type:
+                    type: string
+                    enum:
+                      - urn:ietf:params:oauth:grant-type:jwt
+                  token_type:
+                    type: string
+                    enum:
+                      - Bearer
+                  expires_in:
+                    type: number
+        "4XX":
+          description: Error
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - invalid_request
+                      - invalid_scope
+                      - invalid_target
+                  error_description:
+                    type: string
+                  error_uri:
+                    type: string
