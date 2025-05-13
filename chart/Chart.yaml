@@ -1,0 +1,10 @@
+apiVersion: v2
+name: labid
+description: LabID, Dapla Lab Kubernetes token exchange
+
+type: application
+
+# Replace by Github Action
+version: 0.0.0
+
+appVersion: "v1.0.0"

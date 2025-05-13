@@ -1,0 +1,17 @@
+{{- if .Values.egress.enabled -}}
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: {{ include "labid.fullname" . }}
+spec:
+  exportTo:
+    - .
+  hosts:
+    {{- toYaml .Values.egress.hosts | nindent 4 }}
+  location: MESH_EXTERNAL
+  ports:
+    - name: https
+      number: 443
+      protocol: HTTPS
+  resolution: NONE
+{{- end }}

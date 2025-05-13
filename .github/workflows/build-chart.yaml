@@ -1,0 +1,43 @@
+name: Build Helm Chart
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/charts
+
+jobs:
+  build-chart:
+    permissions:
+      contents: "read"
+      id-token: "write"
+    runs-on: ubuntu-latest
+    env:
+      PLATFORMS: linux/amd64
+    steps:
+      - uses: actions/checkout@v3
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1.1.1"
+        with:
+          workload_identity_provider: "projects/848539402404/locations/global/workloadIdentityPools/gh-actions/providers/gh-actions"
+          service_account: "gh-actions-dapla-lab@artifact-registry-5n.iam.gserviceaccount.com"
+          token_format: "access_token"
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: "oauth2accesstoken"
+          password: "${{ steps.auth.outputs.access_token }}"
+      - name: Setup Helm
+        uses: azure/setup-helm@v4.3.0
+      - name: Get version without v prefix
+        run: |
+          TAG=${{ github.ref_name }}
+          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+      - name: Package and push chart
+        run: |
+          helm package ./chart --version ${VERSION}
+          helm push labid-${VERSION}.tgz oci://$REGISTRY

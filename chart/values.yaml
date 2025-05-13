@@ -1,0 +1,96 @@
+# JWKs to trust (e.g. the JWKs URI for a Dapla Lab cluster)
+externalJwks: ""
+
+teamApi:
+  # Base URL of the Dapla Team API instance to use, without a trailing /
+  baseUrl: ""
+
+  # Secret with two keys:
+  # client_id: Keycloak client ID
+  # client_secret: Keycloak client secret
+  secretName: ""
+
+  # Keycloak token endpoint
+  tokenUrl: ""
+
+# Secret secretName will be mounted as /secret in the container
+signingKey:
+  secretName: ""
+  fileName: "private.pem"
+
+replicaCount: 1
+
+image:
+  repository: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/labid
+  pullPolicy: Always
+  tag: ""
+
+# This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+clusterRole:
+  create: true
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalaton: false
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  annotations: {}
+
+  # E.g. istio-system/dapla-lab-dev-gateway
+  gateway: ""
+
+  # E.g. labid.lab.dapla-dev.ssb.no
+  # Used for both the ingress hostname and the iss claim of issued tokens
+  host: ""
+
+egress:
+  enabled: true
+  hosts:
+    - container.googleapis.com
+
+resources: {}
+
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  httpGet:
+    path: /jwks
+    port: http
+readinessProbe:
+  httpGet:
+    path: /jwks
+    port: http
+
+volumes: []
+
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

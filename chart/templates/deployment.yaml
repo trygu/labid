@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "labid.fullname" . }}
+  labels:
+    {{- include "labid.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "labid.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "labid.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "labid.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: LABID_PORT
+              value: "8080"
+            - name: LABID_JWKS_URI
+              value: {{ .Values.externalJwks | quote }}
+            - name: LABID_PRIVATE_KEY_FILE
+              value: {{ printf "/secret/%s" .Values.signingKey.fileName | quote }}
+            - name: LABID_TEAM_API_URL
+              value: {{ .Values.teamApi.baseUrl | quote }}
+            - name: LABID_TEAM_API_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.teamApi.secretName | quote }}
+                  key: client_id
+            - name: LABID_TEAM_API_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.teamApi.secretName | quote }}
+                  key: client_secret
+            - name: LABID_TEAM_API_TOKEN_URL
+              value: {{ .Values.teamApi.tokenUrl | quote }}
+            - name: LABID_HOST
+              value: {{ printf "https://%s" .Values.ingress.host | quote }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - mountPath: /secret
+              name: secret-volume
+              readOnly: true
+          {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: secret-volume
+          secret:
+            secretName: {{ .Values.signingKey.secretName | quote }}
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
