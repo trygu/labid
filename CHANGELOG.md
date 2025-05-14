@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/statisticsnorway/labid/compare/v1.1.1...v1.1.2) (2025-05-14)
+
+
+### Bug Fixes
+
+* replace app version when building helm chart ([86aa84b](https://github.com/statisticsnorway/labid/commit/86aa84bd3b46d3980ebcfcd47bae0a73a88e04f4))
+
 ## [1.1.1](https://github.com/statisticsnorway/labid/compare/v1.1.0...v1.1.1) (2025-05-14)
 
 
