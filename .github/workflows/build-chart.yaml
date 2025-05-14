@@ -39,5 +39,5 @@ jobs:
           echo "VERSION=${TAG#v}" >> $GITHUB_ENV
       - name: Package and push chart
         run: |
-          helm package ./chart --version ${VERSION}
+          helm package ./chart --version ${VERSION} --app-version v${VERSION}
           helm push labid-${VERSION}.tgz oci://$REGISTRY

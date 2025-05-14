@@ -4,7 +4,8 @@ description: LabID, Dapla Lab Kubernetes token exchange
 
 type: application
 
-# Replace by Github Action
+# Replaced by Github Actions
 version: 0.0.0
 
-appVersion: "v1.0.0"
+# Replaced by Github Actions
+appVersion: "v0.0.0"
