@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -48,76 +49,47 @@ func main() {
 		Prefix: "LABID_",
 	})
 	if err != nil {
-		panic(err)
+		errorAndExit(fmt.Errorf("parse environment variables: %w", err))
 	}
 
 	rawPem, err := os.ReadFile(cfg.PrivateKeyFile)
 	if err != nil {
-		panic(err)
+		errorAndExit(fmt.Errorf("read private signing key file: %w", err))
 	}
 
-	p, _ := pem.Decode(rawPem)
-	if p == nil {
-		panic("no private key found")
-	}
-
-	rawPrivate, err := x509.ParsePKCS8PrivateKey(p.Bytes)
+	privateKey, publicKey, err := ParseRsaKeyPair(rawPem)
 	if err != nil {
-		panic(err)
-	}
-
-	rawPrivate, ok := rawPrivate.(*rsa.PrivateKey)
-	if !ok {
-		panic("unexpected key type")
-	}
-
-	privateKey, err := jwk.Import(rawPrivate)
-	if err != nil {
-		panic(err)
-	}
-	jwk.AssignKeyID(privateKey)
-	privateKey.Set("alg", "RS256")
-	privateKey.Set("use", "sig")
-
-	pubKey, err := privateKey.PublicKey()
-	if err != nil {
-		errorAndExit(err)
+		errorAndExit(fmt.Errorf("parse RSA keypair: %w", err))
 	}
 
 	localJwks := jwk.NewSet()
-	if err := localJwks.AddKey(pubKey); err != nil {
-		errorAndExit(err)
+	if err := localJwks.AddKey(publicKey); err != nil {
+		errorAndExit(fmt.Errorf("add public key to local jwks: %w", err))
 	}
 
 	// Establish an automatically updating cache of the external JWKS
-	jwksCache, err := jwk.NewCache(ctx, httprc.NewClient())
+	jwksGetter, err := CachedJwksGetter(ctx, cfg.JwksUri)
 	if err != nil {
-		panic(err)
-	}
-	getJwks := func(ctx context.Context) (jwk.Set, error) {
-		return jwksCache.Lookup(ctx, cfg.JwksUri)
-	}
-	if err := jwksCache.Register(ctx, cfg.JwksUri); err != nil {
-		panic(err)
+		errorAndExit(fmt.Errorf("create cached jwks getter: %w", err))
 	}
 
 	clientset, err := initializeKubernetesClient()
 	if err != nil {
-		errorAndExit(err)
+		errorAndExit(fmt.Errorf("initialize kubernetes client: %w", err))
 	}
 
 	getSa := func(ctx context.Context, name, namespace string) (*corev1.ServiceAccount, error) {
 		return clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, metav1.GetOptions{})
 	}
 
-	kubernetesTokenParser := token.NewKubernetesTokenParser(token.JwksGetterFunc(getJwks))
+	kubernetesTokenParser := token.NewKubernetesTokenParser(jwksGetter)
 
 	signedJwtCreator, err := token.NewSignedJwtIssuer(
 		cfg.Host,
 		privateKey,
 	)
 	if err != nil {
-		panic(err.Error())
+		errorAndExit(fmt.Errorf("create signed jwt issuer: %w", err))
 	}
 
 	thOpts := []token.ThOptsFunc{
@@ -141,12 +113,12 @@ func main() {
 		thOpts...,
 	)
 	if err != nil {
-		errorAndExit(err)
+		errorAndExit(fmt.Errorf("create token handler: %w", err))
 	}
 
 	srv, err := api.NewServer(tokenHandler, api.WithMiddleware(token.Logging(log)))
 	if err != nil {
-		errorAndExit(err)
+		errorAndExit(fmt.Errorf("create api server: %w", err))
 	}
 
 	r := chi.NewRouter()
@@ -158,18 +130,67 @@ func main() {
 				next.ServeHTTP(w, r)
 			})
 		})
-		r.Get("/jwks", func(w http.ResponseWriter, r *http.Request) {
-			enc := json.NewEncoder(w)
-			if err := enc.Encode(localJwks); err != nil {
-				log.Error("error writing jwks", "error", err)
-			}
-		})
+
+		jwks, err := Jwks(localJwks)
+		if err != nil {
+			errorAndExit(fmt.Errorf("create jwks handler: %w", err))
+		}
+		r.Get("/jwks", jwks)
 		r.Get("/.well-known/openid-configuration", WellKnown(cfg.Host))
 	})
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
 		slog.Error(err.Error())
 	}
+}
+
+func ParseRsaKeyPair(rawPrivateKey []byte) (private jwk.Key, public jwk.Key, err error) {
+	p, _ := pem.Decode(rawPrivateKey)
+	if p == nil {
+		return nil, nil, errors.New("unable to decode private key")
+	}
+
+	rawPrivate, err := x509.ParsePKCS8PrivateKey(p.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse private key: %w", err)
+	}
+
+	rawPrivate, ok := rawPrivate.(*rsa.PrivateKey)
+	if !ok {
+		return nil, nil, errors.New("unexpected private key type, must be RSA")
+	}
+
+	privateKey, err := jwk.Import(rawPrivate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("import private key as jwk: %w", err)
+	}
+	jwk.AssignKeyID(privateKey)
+	privateKey.Set("alg", "RS256")
+	privateKey.Set("use", "sig")
+
+	publicKey, err := privateKey.PublicKey()
+	if err != nil {
+		return nil, nil, fmt.Errorf("get public key from private key: %w", err)
+	}
+
+	return privateKey, publicKey, nil
+}
+
+func CachedJwksGetter(ctx context.Context, jwksUri string) (token.JwksGetter, error) {
+	jwksCache, err := jwk.NewCache(ctx, httprc.NewClient())
+	if err != nil {
+		return nil, fmt.Errorf("create jwks cache: %w", err)
+	}
+	if err := jwksCache.Register(ctx, jwksUri); err != nil {
+		return nil, fmt.Errorf("register external jwks in cache: %w", err)
+	}
+	getJwks := func(ctx context.Context) (jwk.Set, error) {
+		return jwksCache.Lookup(ctx, jwksUri)
+	}
+	if _, err := getJwks(ctx); err != nil {
+		return nil, fmt.Errorf("validate jwks getter: %w", err)
+	}
+	return token.JwksGetterFunc(getJwks), nil
 }
 
 func errorAndExit(err error) {
@@ -205,4 +226,14 @@ func WellKnown(host string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Write(b)
 	}
+}
+
+func Jwks(s jwk.Set) (func(http.ResponseWriter, *http.Request), error) {
+	jwksBytes, err := json.Marshal(s)
+	if err != nil {
+		return nil, fmt.Errorf("marshal jwks: %w", err)
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Write(jwksBytes)
+	}, nil
 }
