@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/statisticsnorway/labid/compare/v1.1.2...v1.2.0) (2025-05-16)
+
+
+### Features
+
+* use chi's httplogger for all request paths ([2436119](https://github.com/statisticsnorway/labid/commit/24361197598592c72d1865c5f5a0ac3c930261c9))
+
 ## [1.1.2](https://github.com/statisticsnorway/labid/compare/v1.1.1...v1.1.2) (2025-05-14)
 
 
