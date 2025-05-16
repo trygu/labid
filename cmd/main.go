@@ -11,12 +11,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/go-chi/chi"
+	"github.com/go-chi/httplog/v2"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	api "github.com/statisticsnorway/labid/api/oas"
@@ -39,6 +41,8 @@ type config struct {
 	TeamApiTokenUrl     string `env:"TEAM_API_TOKEN_URL"`
 
 	Host string `env:"HOST,required,notEmpty"`
+
+	LogLevel slog.Level `env:"LOG_LEVEL" envDefault:"INFO"`
 }
 
 func main() {
@@ -116,21 +120,22 @@ func main() {
 		errorAndExit(fmt.Errorf("create token handler: %w", err))
 	}
 
-	srv, err := api.NewServer(tokenHandler, api.WithMiddleware(token.Logging(log)))
+	srv, err := api.NewServer(tokenHandler)
 	if err != nil {
 		errorAndExit(fmt.Errorf("create api server: %w", err))
 	}
 
+	middlelog := httplog.NewLogger("labid", httplog.Options{
+		LogLevel:        cfg.LogLevel,
+		JSON:            true,
+		QuietDownRoutes: []string{"/"},
+		QuietDownPeriod: 10 * time.Second,
+	})
+
 	r := chi.NewRouter()
+	r.Use(httplog.RequestLogger(middlelog))
 	r.Mount("/", srv)
 	r.Group(func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				log.Info("handle request", "method", r.Method, "pattern", r.Pattern)
-				next.ServeHTTP(w, r)
-			})
-		})
-
 		jwks, err := Jwks(localJwks)
 		if err != nil {
 			errorAndExit(fmt.Errorf("create jwks handler: %w", err))
@@ -140,7 +145,7 @@ func main() {
 	})
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
-		slog.Error(err.Error())
+		log.Error(err.Error())
 	}
 }
 

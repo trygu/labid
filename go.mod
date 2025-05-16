@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/go-chi/chi v1.5.5
+	github.com/go-chi/httplog/v2 v2.1.1
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.1.0
 	github.com/lestrrat-go/httprc/v3 v3.0.0-beta1
@@ -27,6 +28,7 @@ require (
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
+	github.com/go-chi/chi/v5 v5.2.1 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
