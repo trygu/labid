@@ -21,7 +21,7 @@ signingKey:
 replicaCount: 1
 
 image:
-  repository: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/labid
+  repository: europe-north1-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/labid
   pullPolicy: Always
   tag: ""
 

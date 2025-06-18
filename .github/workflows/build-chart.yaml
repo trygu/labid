@@ -6,7 +6,7 @@ on:
       - "v*"
 
 env:
-  REGISTRY: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/charts
+  REGISTRY: europe-north1-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla/charts
 
 jobs:
   build-chart:

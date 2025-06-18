@@ -23,7 +23,7 @@ on:
       - ".github/workflows/build.yml"
 
 env:
-  REGISTRY: europe-west4-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla
+  REGISTRY: europe-north1-docker.pkg.dev/artifact-registry-5n/dapla-lab-docker/dapla
   IMAGE: labid
   TAG: ${{ github.ref_name }}-${{ github.sha }}
 
