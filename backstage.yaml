@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: labid
+  title: LabID
+  description: |
+    Service for exchanging native Kubernetes tokens for personal tokens
+  tags:
+    - dapla
+    - go
+  annotations:
+    github.com/project-slug: statisticsnorway/labid
+spec:
+  type: service
+  owner: dapla-skyinfra-developers
+  lifecycle: production
+  system: dapla-lab
+  consumesApis:
+    - dapla-team-api
