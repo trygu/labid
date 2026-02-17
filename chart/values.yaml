@@ -1,6 +1,13 @@
 # JWKs to trust (e.g. the JWKs URI for a Dapla Lab cluster)
 externalJwks: ""
 
+apiImplementation: ""
+
+daplaApi:
+  baseUrl: ""
+  tokenSecretName: ""
+  tokenSecretKey: ""
+
 teamApi:
   # Base URL of the Dapla Team API instance to use, without a trailing /
   baseUrl: ""

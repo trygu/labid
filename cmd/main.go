@@ -11,13 +11,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/statisticsnorway/labid/internal/daplaapi"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/httplog/v2"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -35,10 +37,16 @@ type config struct {
 	Port           string `env:"PORT" envDefault:"8080"`
 	PrivateKeyFile string `env:"PRIVATE_KEY_FILE,required,notEmpty,unset"`
 
+	// dapla-api or team-api
+	ApiImplementation string `env:"API_IMPLEMENTATION"`
+
 	TeamApiUrl          string `env:"TEAM_API_URL"`
 	TeamApiClientId     string `env:"TEAM_API_CLIENT_ID"`
 	TeamApiClientSecret string `env:"TEAM_API_CLIENT_SECRET"`
 	TeamApiTokenUrl     string `env:"TEAM_API_TOKEN_URL"`
+
+	DaplaApiUrl   string `env:"DAPLA_API_URL"`
+	DaplaApiToken string `env:"DAPLA_API_TOKEN"`
 
 	Host string `env:"HOST,required,notEmpty"`
 
@@ -99,7 +107,7 @@ func main() {
 	thOpts := []token.ThOptsFunc{
 		token.WithCurrentGroupPopulator(token.CurrentGroupMapper(ctx, getSa)),
 	}
-	if cfg.TeamApiUrl != "" {
+	if strings.EqualFold(cfg.ApiImplementation, "team-api") {
 		thOpts = append(
 			thOpts,
 			token.WithAllGroupsPopulator(
@@ -108,6 +116,16 @@ func main() {
 					cfg.TeamApiTokenUrl,
 					cfg.TeamApiClientId,
 					cfg.TeamApiClientSecret,
+				).AllGroupsPopulator,
+			),
+		)
+	} else if strings.EqualFold(cfg.ApiImplementation, "dapla-api") {
+		thOpts = append(
+			thOpts,
+			token.WithAllGroupsPopulator(
+				daplaapi.NewClient(
+					cfg.DaplaApiUrl,
+					cfg.DaplaApiToken,
 				).AllGroupsPopulator,
 			),
 		)

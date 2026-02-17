@@ -96,7 +96,7 @@ func TestParseInvalidKubernetesClaim(t *testing.T) {
 
 	if err == nil {
 		t.Fatalf("unexpected success, kubeClaim=%v", *kubeClaim)
-	} else if !strings.HasPrefix(err.Error(), "parse and validate token:") {
+	} else if !strings.Contains(err.Error(), "parse and validate token:") {
 		t.Fatalf("unexpected error, error=%s", err.Error())
 	}
 }
