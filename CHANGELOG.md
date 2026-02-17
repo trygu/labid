@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/statisticsnorway/labid/compare/v1.2.0...v1.2.1) (2026-02-17)
+
+
+### Features
+
+* dapla api ([#10](https://github.com/statisticsnorway/labid/issues/10)) ([22a5aca](https://github.com/statisticsnorway/labid/commit/22a5acaf86d969b486dac50df413ff2d892088dd))
+
 ## [1.2.0](https://github.com/statisticsnorway/labid/compare/v1.1.2...v1.2.0) (2025-05-16)
 
 
