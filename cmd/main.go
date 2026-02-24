@@ -247,6 +247,7 @@ func WellKnown(host string) func(http.ResponseWriter, *http.Request) {
 	}
 	b, _ := json.Marshal(wellknown)
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
 	}
 }
@@ -257,6 +258,7 @@ func Jwks(s jwk.Set) (func(http.ResponseWriter, *http.Request), error) {
 		return nil, fmt.Errorf("marshal jwks: %w", err)
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.Write(jwksBytes)
 	}, nil
 }
