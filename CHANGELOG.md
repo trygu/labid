@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/statisticsnorway/labid/compare/v1.2.1...v1.2.2) (2026-02-24)
+
+
+### Bug Fixes
+
+* return application/json for well-known and jwks ([#12](https://github.com/statisticsnorway/labid/issues/12)) ([9551aad](https://github.com/statisticsnorway/labid/commit/9551aad45978fca8e2f38fcf5016f8f7c722b2d4))
+
 ## [1.2.1](https://github.com/statisticsnorway/labid/compare/v1.2.0...v1.2.1) (2026-02-17)
 
 
