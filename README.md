@@ -5,7 +5,7 @@ Signed JWT token exchange service
 ## What it does
 
 LabID provides an internal token-exchange service that swaps a Kubernetes
-service account token for a signed JWT (a "LabID token"). In short:
+service account token for a signed JWT (a "LabID token"). Summary:
 
 - Validates incoming Kubernetes tokens against a JWKS (Kubernetes/OpenID).
 - Maps service account / namespace to Dapla groups (via Dapla API or Team API
@@ -38,28 +38,25 @@ having to handle Kubernetes token rotation or distribute private signing keys.
 
 ## Implementation details & mapping examples
 
-The README above is an accurate summary of the codebase. Below are precise
-implementation details to match the code:
-
-- Service account -> current group mapping: LabID looks for the Kubernetes
+- **Service account -> current group mapping:** LabID looks for the Kubernetes
    ServiceAccount annotation `dapla.ssb.no/impersonate-group` (constant
    `DaplaGroupAnnotation`). If present and the requester asked for the
    `current_group` scope, LabID adds a `dapla.group` claim with that value.
-- All-groups lookup: when `all_groups` scope is requested, LabID calls either
+- **All-groups lookup:** when `all_groups` scope is requested, LabID calls either
    the Dapla GraphQL API or the Team API client (chosen by the `API_IMPLEMENTATION`
    environment variable) to populate a `dapla.groups` claim (an array of group
    names).
-- Username derivation: the code expects user namespaces prefixed with
+- **Username derivation:** the code expects user namespaces prefixed with
    `user-ssb-` (constant `UserNamespacePrefix`). The username is derived by
    trimming that prefix from the Kubernetes namespace. For example,
    namespace `user-ssb-kari` -> username `kari`.
-- Subject token parsing and validation: the incoming `subject_token` is parsed
+- **Subject token parsing and validation:** the incoming `subject_token` is parsed
    and validated as a Kubernetes-issued JWT using an external JWKS. The parser
    expects a typed claim `kubernetes.io` and extracts `namespace` and
    `serviceaccount.name` from it.
-- JWKS caching: LabID uses a JWKS cache (`jwk.NewCache`) and registers the
+- **JWKS caching:** LabID uses a JWKS cache (`jwk.NewCache`) and registers the
    external JWKS URI; the cache is used to validate incoming tokens.
-- Issued token lifetime: issued LabID tokens use a default expiry of 1 hour
+- **Issued token lifetime:** issued LabID tokens use a default expiry of 1 hour
    (the `SignedJwtIssuer` default). The `/token` response's `expires_in` is
    returned as `3600` seconds.
 
